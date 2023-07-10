@@ -1,0 +1,340 @@
+---
+title: "Taylor Swift SEO Analysis"
+author: "Team 1"
+date: "09/07/2023"
+output: html_document
+
+---
+
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
+```
+
+
+```{r message=FALSE, warning=FALSE}
+# Loading Packages
+setwd("/Users/marc/Library/CloudStorage/OneDrive-COBISGmbH&Co.KG/HULT/Courses/Building Interactive Business Reports with R/A2 - text_mining")
+library(tidyverse)
+library(tidytext)
+library(wordcloud)
+library(dplyr)
+library(wordcloud2)
+library(tidyverse)
+library(tidytext)
+library(wordcloud)
+library(xts)
+library(tbl2xts)
+library("plotly")
+library(dygraphs)
+library(DT)
+library("formattable")
+library(htmltools)
+library(here)
+library(rio)
+library(webshot)
+library(htmlwidgets)
+library(hwordcloud)
+```
+
+```{r message=FALSE, warning=FALSE}
+## Install RedditExtractoR package first;
+## then run this file line by line
+library(tidyverse)
+source("https://raw.githubusercontent.com/multidis/hult-inter-bus-reports-r/main/text_mining/query_reddit_funs.R")
+
+# set your chosen subreddit string here
+subr <- "TaylorSwift"
+
+# limit the number of threads to query (be careful not to set too large)
+nthreads <- 50
+
+# change "week" to one of (hour, day, week, month, year) depending
+#  on your chosen subreddit activity
+# CAUTION: avoid too long time periods as your computer may be blocked
+subr_urls <- find_thread_urls(subreddit=subr, sort_by="top", period="week")
+str(subr_urls)
+head(subr_urls)
+tail(subr_urls)
+
+# sort by the number of comments
+subr_urls_sort <- subr_urls %>% arrange(desc(comments))
+
+# collect all threads info (main call)
+threads_df <- collect_all_threads(subr_urls_sort$url, nthreads)
+str(threads_df)
+
+save(threads_df, file = paste0(subr, "_", nthreads, "threads.rda"))
+```
+# Business Context:
+
+ 
+This report analyzes user-generated text from the Taylor Swift subreddit, focusing on the impact of her recent album "Speak Now (Taylor's Version)." With a Search Engine Optimization (SEO) perspective, we aim to uncover trends, keywords, and sentiment surrounding Taylor Swift and her music. By leveraging these insights, we provide recommendations to enhance her online presence and reach a wider audience.
+
+
+# Data Preparation: 
+
+ 
+
+The words from each post on the subreddit are extracted as individual words and these words are then grouped together, and various metrics are calculated for each word, such as the count of how many times each word appears, the average upvote ratio for posts containing that word, and the total number of comments, upvotes, downvotes, and awards received for posts containing that word.
+
+We also decided to clean some formating errors, emojis and data that are not important for this analysis then we remove some reddit and context related stop words such as: "remove", "removed", "Taylor", "Swift", "taylor", "swift", "deleted","songs" and "http"
+
+
+
+
+```{r message=FALSE, warning=FALSE}
+# Loading the file
+
+load(file = "TaylorSwift_50threads.rda")
+
+
+```
+ 
+
+ 
+
+
+# Interactive Table:
+
+This table analyses word frequency by calculating average upvote ratios, totaling comments, upvotes, downvotes, and awards per word, as well as evaluating word usage. 
+
+Word Frequency Analysis: The top terms in threads and comments are shown in the visualization, highlighting recurring themes or subjects relating to Taylor Swift. 
+
+Average Upvote Ratio: The average upvote ratio for each word is shown in the "avg_up_ratio" column. A higher average upvote ratio suggests that these terms are frequently associated with constructive feedback or viewpoints in conversations. 
+
+Metrics for measuring engagement include "total_comments," "total_upvotes," "total_downvotes," and "total_awards," which together provide a summary of the level of engagement and interaction. With this, we can gauge how well-liked the content is and the influence it has in terms of accolades. 
+
+```{r message=FALSE, warning=FALSE}
+threads_df$comments <- gsub("[^\x20-\x7E]", " ", threads_df$comments)
+threads_df$title <- gsub("[^\x20-\x7E]", " ", threads_df$title)
+
+# tidy table: text column to unite thread's title, text, and comments
+threads_tbl <- as_tibble(threads_df) %>%
+  unite(title, text, text_comments, col = "text", sep = " ")
+
+
+
+# tokenization:
+# unnest_tokens removes punctuation, converts text to lower case
+threads_words <- threads_tbl %>%
+  unnest_tokens(word, text) %>%
+  # omit most rare words: keep those occurring more than 10 times
+  group_by(word) %>%
+  filter(n() > 10) %>%
+  ungroup()
+
+
+
+# Add custom stopwords to the existing stop_words$word vector
+stop_words <- c(stop_words$word, "remove", "removed", "Taylor", "Swift", "taylor", "swift", "deleted","songs","https")
+
+# Filter the stopwords using the updated stop_words$word vector
+threads_words_clean <- threads_words %>%
+  filter(!word %in% stop_words) %>%
+  filter(!is.na(word))
+
+
+# Convert 'comments' column to integer
+threads_words_clean <- threads_words_clean %>%
+  mutate(comments = as.integer(comments))
+
+
+
+
+
+# term frequency (tf)
+threads_words_count <- threads_words_clean %>% 
+  group_by(word) %>% 
+  summarise(count = n(), avg_up_ratio = mean(up_ratio), 
+            total_comments = sum(comments), 
+            total_upvotes = sum(upvotes),
+            total_downvotes = sum(downvotes),
+            total_awards = sum(total_awards_received)) %>%
+  arrange(desc(count))%>%
+  head(50)
+
+
+onefive_words <- threads_words_count %>%
+  top_n(15, count)
+
+onefive_words_v2 <- threads_words_count[,c("word", "count", "avg_up_ratio","total_comments","total_upvotes","total_downvotes")]
+datatable(onefive_words)
+```
+# Bar Chart: 
+
+ 
+
+In this bar chart each bar is a single word, and the length of the bar shows how many times that word appears in the dataset. The top 15 words that are used the most often are shown here. When you hover your mouse over a bar, a tooltip appears with more information about the word. This includes the word itself, the count, the average upvote ratio, and the total number of comments connected with that word. 
+
+ 
+
+This graphic shows you the most common words in the dataset, which can help you find key terms or topics that come up a lot in TaylorSwift's subreddit. You can look at which words are used the most to figure out what people talk about or what themes are most popular in the subreddit. 
+
+
+```{r message=FALSE, warning=FALSE}
+
+# Reorder the word column based on the count column
+onefive_words <- onefive_words %>%
+  arrange(count) %>%
+  mutate(word = factor(word, levels = word))
+
+
+
+bar_onefive_words <- plot_ly(onefive_words,
+               y = ~word,
+               x = ~count,
+               type = 'bar',
+               marker = list(color = "skyblue"),
+               hovertemplate = ~paste('Word: ', word, 
+                                      '\nCount: ', count, 
+                                      '\nAverage Up Ratio: ', round(avg_up_ratio, 2),
+                                      '\nTotal Comments: ', total_comments)) %>%
+  layout(title = "Top 15 Words by Apperance",
+         xaxis = list(title = "Apperance Count"),
+         yaxis = list(title = "Words"))
+
+bar_onefive_words
+
+# Create the bar chart in descending order
+
+
+```
+
+# Bigram Bar Chart:
+
+This script conducts a bigram analysis on the text data from threads_tbl. It first breaks the text down into pairs of adjacent words (bigrams), then it removes any pairs that contain stop words or missing words. The script then counts the frequency of each bigram and plots the top 15 most frequent bigrams in an interactive bar chart. 
+
+The bigram words with the highest occurrences are <b> vault track(s), appearing 237 and 130 times, holding the first and third top counts in the data. Additional bigrams include sparks fly, Taylor's version, electric touch, ranking second, fourth, and fifth in the bigram count. </b> 
+
+
+
+
+
+
+
+```{r}
+
+
+# ngram-analysis: filtering out stopwords
+threads_bigram <- threads_tbl %>%
+  unnest_tokens(bigram, text, token = "ngrams", n = 2) %>%
+  separate(bigram, c("word1", "word2"), sep = " ") %>%
+  filter(!word1 %in% stop_words,
+         !word2 %in% stop_words,
+         !is.na(word1)) %>%
+  count(word1, word2, sort = TRUE)
+#threads_bigram
+
+
+# Concatenate the two words into a single column
+threads_bigram$bigram <- paste(threads_bigram$word1, threads_bigram$word2, sep = " ")
+
+
+## Interactive bigram
+bigram_top <- threads_bigram %>% top_n(15, n)%>%
+  arrange(n) %>%
+  mutate(bigram = factor(bigram, levels = bigram))
+
+
+
+
+########################################################################################
+
+bigram_plot <- plot_ly(bigram_top,
+               y = ~bigram,
+               x = ~n,
+               type = 'bar',
+               marker = list(color = "skyblue"),
+               hovertemplate = ~paste('Word: ', bigram, 
+                                      '\nCount: ', n 
+                                     )) %>%
+  layout(title = "Top 15 bigrams by Apperance",
+         xaxis = list(title = "Apperance Count"),
+         yaxis = list(title = "Words"))
+bigram_plot
+
+#########################################################################################
+
+# Concatenate the two words into a single column
+threads_bigram$bigram <- paste(threads_bigram$word1, threads_bigram$word2, sep = " ")
+
+#threads_bigram
+
+
+
+
+
+
+```
+
+# Word Cloud:
+
+A word cloud is a visual representation where individual words are displayed in different sizes according to their frequency or importance in a given dataset. Words that are used more frequently are displayed in a larger font, while less common words appear smaller. In this case, each element in the word cloud is a single word from the data. The size of each word in the cloud corresponds to how many times it appears in the dataset. 
+
+ 
+
+This word cloud is also interactive. This means that when you hover your mouse over a word, a small pop-up appears showing the exact word and the count of its appearance, providing you with immediate access to detailed data. 
+
+
+```{r}
+
+
+# Concatenate the three words into a single column
+threads_bigram$bigram <- paste(threads_bigram$word1, threads_bigram$word2, sep = " ")
+
+# Select the top 50 trigrams based on count
+top_50_bigram <- threads_bigram %>%
+  arrange(desc(n)) %>%
+  head(50)
+
+# Create a data frame with word and frequency columns for the word cloud
+word_cloud_data <- data.frame(word = top_50_bigram$bigram, freq = top_50_bigram$n)
+
+hwordcloud::hwordcloud(text=threads_words_count$word,size=threads_words_count$count,width="100%",height="300px",theme="darkgreen")
+# Create an interactive word cloud with the top 50 words
+#w1 <- wordcloud2(onefive_words, color = "random-light", backgroundColor = "dark")
+#w1
+
+
+
+
+```
+
+# Bigram Word Cloud:
+
+
+
+A word cloud is a visual representation where words (in this case, bigrams) are displayed in varying sizes depending on how frequently they occur in the data. Words that occur more frequently appear larger, whereas less frequent words are smaller. In this case, each element in the word cloud is a bigram, a pair of consecutive words from the data. The size of each bigram in the visualization corresponds to the number of times it appears in the dataset. 
+
+ 
+
+This word cloud is interactive, which means when you hover over a bigram with your cursor, a small information box appears. This box shows the exact bigram and its frequency, allowing you to easily see which word pairs are the most prominent in the data. The visualization usually takes the form of a cluster of words, with more common bigrams standing out due to their larger size. 
+
+
+
+```{r}
+hwordcloud::hwordcloud(text=word_cloud_data$word,size=word_cloud_data$freq,width="100%",height="300px",theme="darkgreen")
+
+```
+
+
+
+# Recommendations: 
+  
+### Social Media Content:   
+ 
+The word frequency analysis reveals that the users frequently employ terms such as <b>"song," "love," "speak," and "album." </b>This suggests that specific songs, the concept of love (in reference to song lyrics), and albums are frequently discussed in conversation.  The bigram analysis reveals those words such as <b>"vault tracks", "sparks fly", "vault track", and "Taylor's version" </b> are frequently used together. As bigrams are more informative than single-word phrases, they can be used as keywords for SEO content development. Developing social media posts and campaigns incorporating these keywords. For example, developing content about Taylor Swift's "Vault" compositions may increase traffic.  
+  
+### Interact with Well-Liked Posts:   
+  
+The interactive table analysis displays the total number of comments, upvotes, downvotes, and accolades for each term as well as the average upvote ratio for each post. Examining posts with high levels of engagement can reveal the type of content that resonates with the audience. This knowledge can guide the creation of new substances. 
+ 
+# Conclusion:  
+  
+In conclusion, the Taylor Swift subreddit research reveals community topics, word frequency, and user interaction. The word cloud and bar chart show the most prevalent terms and themes in talks. Songs, love, and the new album "Speak Now (Taylor's Version)" are popular topics. Popular subjects can boost visibility and engagement in content and SEO efforts. 
+  
+Bigram analysis highlights word pairings like "vault tracks," "sparks fly," and "Taylor's version." These popular bigrams can boost SEO and content traffic. The interactive table also shows comments, upvotes, downvotes, awards, and the average upvote ratio for each phrase. Analyzing high-engagement posts can help create audience-friendly content. 
+  
+The Taylor Swift subreddit analysis suggests content creators and marketers focus on popular themes, use common bigrams, and connect with high-performing posts. Content strategy can increase reach and impact by considering subreddit community preferences and interests.
+
+
